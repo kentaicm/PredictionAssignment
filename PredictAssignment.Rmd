@@ -1,0 +1,140 @@
+---
+title: "PredictionAssignmentWriteup"
+author: "Tai Chee Ming"
+date: "27 September 2017"
+output:
+  word_document: default
+  html_document:
+    keep_md: yes
+---
+
+##Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache=TRUE)
+```
+
+###Set working directory
+```{r}
+setwd('D:/Downloads/Coursera/Practical Machine Learning/Prediction Assignment Writeup')
+```
+
+###Insert libraries
+```{r}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(corrplot)
+```
+
+###Download & Process the data
+```{r}
+trainingUrl <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testingUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainingFile <- "./data/pml-training.csv"
+testingFile  <- "./data/pml-testing.csv"
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+if (!file.exists(trainingFile)) {
+  download.file(trainingUrl, destfile=trainingFile)
+}
+if (!file.exists(testingFile)) {
+  download.file(testingUrl, destfile=testingFile)
+}
+```
+
+###Read the 2 CSV files
+```{r}
+trainingRaw <- read.csv("./data/pml-training.csv")
+testingRaw <- read.csv("./data/pml-testing.csv")
+```
+
+###Explore the size of both dataset
+```{r}
+dim(trainingRaw); dim(testingRaw)
+```
+The trainingRaw has 19622 observations and the testingRaw has 20 observations. Both datasets have 160 variables. 
+
+###Data clean up
+Next, we have to clean up the trainingRaw dataset to make it suitable for machine learning which is to minimise inconsistency. However, we have to take note that the "classe" variable in the training set is the result we try to predict the testing data and we will not be removing it from the training data. However, we will take it out of the raw data before we do the data cleaning and put it back after we clean up the other variables. 
+```{r}
+trainingRaw <- trainingRaw[, colSums(is.na(trainingRaw)) == 0] 
+testingRaw <- testingRaw[, colSums(is.na(testingRaw)) == 0] 
+classe <- trainingRaw$classe
+trainingRemove <- grepl("^X|timestamp|window", names(trainingRaw))
+trainingRaw <- trainingRaw[, !trainingRemove]
+trainingCleaned <- trainingRaw[, sapply(trainingRaw, is.numeric)]
+trainingCleaned$classe <- classe
+testingRemove <- grepl("^X|timestamp|window", names(testingRaw))
+testingRaw <- testingRaw[, !testingRemove]
+testingCleaned <- testingRaw[, sapply(testingRaw, is.numeric)]
+```
+
+###Split the trainingCleaned data
+We are using the createDataPartition command to split the trainingCleaned data. The ideal ratio that we like to have is 70% to be used in training and the remaining to be used as for testing. Do not be mistaken that with the testingCleaned data as it is used to validate our findings. At the same time, we are setting the seed at 1 in order to reproduce it later.
+```{r}
+set.seed(1)
+inTrain <- createDataPartition(trainingCleaned$classe, p=0.70, list=F)
+trainingData <- trainingCleaned[inTrain, ]
+testingData <- trainingCleaned[-inTrain, ]
+```
+
+##Data modeling
+
+We will be using Random forest algorithm to predict the activity recognision. as it selects the variables by looking at the correlated elements in the dataset. We will also be using a 5-fold cross validation when we apply the algorithm. 
+```{r}
+controlRf <- trainControl(method="cv", 5)
+modelRf <- train(classe ~ ., data=trainingData, method="rf", trControl=controlRf, ntree=250)
+modelRf
+```
+
+We are applying the modelRf to predict the testingData. 
+```{r}
+predictRf <- predict(modelRf, testingData)
+confusionMatrix(testingData$classe, predictRf)
+```
+
+###Sums up the numbers
+```{r}
+accuracy <- postResample(predictRf, testingData$classe)
+accuracy
+outofsampleerror <- 1 - as.numeric(confusionMatrix(testingData$classe, predictRf)$overall[1])
+outofsampleerror
+```
+The training model that we selected gave us an accuracy of 99.45% and a out of sample error of 0.54%
+
+##Using the result to predict the testingCleaned dataset
+```{r}
+FinalResult <- predict(modelRf, testingCleaned[, -length(names(testingCleaned))])
+FinalResult
+```
+
+#Appendix
+Correlation Matrix Visualization
+```{r}
+corr <- cor(trainingData[, -length(names(trainingData))])
+corrplot(corr, method="color")
+```
+
+
+Decision Tree Visualization
+```{r}
+tree <- rpart(classe ~ ., data=trainingData, method="class")
+prp(tree)
+```
+
+
+
+
+
+
+
+
+
+
+
+
